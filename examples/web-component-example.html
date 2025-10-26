@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tavus Interview Web Component Example</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin-bottom: 20px;
+    }
+
+    .demo {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .event-log {
+      background: #1a1a1a;
+      color: #0f0;
+      padding: 16px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .event-log-item {
+      margin-bottom: 8px;
+      padding: 4px;
+      border-left: 2px solid #0f0;
+      padding-left: 8px;
+    }
+
+    tavus-interview {
+      display: block;
+      width: 100%;
+      height: 600px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .warning {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      padding: 12px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Tavus Interview Web Component Example</h1>
+
+    <div class="warning">
+      <strong>⚠️ Note:</strong> This example requires the Next.js app to be running and built with the web component support.
+      For standalone usage, bundle the component separately.
+    </div>
+
+    <div class="demo">
+      <h2>Interview Demo</h2>
+      <tavus-interview
+        persona='{"name":"Technical Recruiter","systemPrompt":"You are a friendly technical recruiter conducting a screening interview. Ask thoughtful questions about the candidate experience and technical skills.","topics":["past experience","technical skills","motivation"],"tone":"friendly","followUpStyle":"balanced","questionStyle":"hybrid","maxQuestions":5,"maxFollowUpsPerQuestion":2,"attachContextFromInterview":true}'
+        context='{"company":"Acme Corp","role":"Senior Software Engineer","seniority":"Senior","jdHighlights":["5+ years backend development","Strong API design skills","Experience with microservices"]}'
+        autoplay="true"
+      ></tavus-interview>
+    </div>
+
+    <div class="demo">
+      <h2>Event Log</h2>
+      <div class="event-log" id="eventLog">
+        <div class="event-log-item">Waiting for events...</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    // Listen for events from the Tavus interview
+    const eventLog = document.getElementById('eventLog');
+    let eventCount = 0;
+
+    window.addEventListener('tavus:event', (event) => {
+      eventCount++;
+      const { type, timestamp, text, payload } = event.detail;
+
+      const logItem = document.createElement('div');
+      logItem.className = 'event-log-item';
+
+      const time = new Date(timestamp).toLocaleTimeString();
+      logItem.innerHTML = `
+        <strong>[${eventCount}] ${type.toUpperCase()}</strong> @ ${time}
+        ${text ? `<br>└─ ${text}` : ''}
+        ${payload ? `<br>└─ Payload: ${JSON.stringify(payload).slice(0, 100)}...` : ''}
+      `;
+
+      eventLog.appendChild(logItem);
+      eventLog.scrollTop = eventLog.scrollHeight;
+    });
+
+    // Clear the initial message once we start receiving events
+    window.addEventListener('tavus:event', () => {
+      const initial = eventLog.querySelector('.event-log-item');
+      if (initial && initial.textContent.includes('Waiting')) {
+        initial.remove();
+      }
+    }, { once: true });
+  </script>
+</body>
+</html>
