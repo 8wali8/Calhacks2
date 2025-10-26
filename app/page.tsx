@@ -1,17 +1,12 @@
 "use client";
 
 /**
- * Main demo page
- *
- * Layout:
- * - Left panel: JSON editors for PersonaInput and InterviewContext
- * - Right panel: TavusInterview component
- * - Bottom: MetricsPanel showing event log
+ * Main interview page - simplified with job URL input
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { TavusInterview } from "@/components/TavusInterview";
-import { MetricsPanel } from "@/components/MetricsPanel";
+import { AnalyticsPanel } from "@/components/AnalyticsPanel";
 import { useTavusWebComponent } from "@/components/TavusInterviewWebComponent";
 import {
   PersonaInput,
@@ -20,223 +15,559 @@ import {
   TavusObjectivesPayload,
 } from "@/types";
 
-// Default values for demo
-const DEFAULT_PERSONA: PersonaInput = {
-  name: "Technical Recruiter",
-  systemPrompt:
-    "You are a friendly technical recruiter conducting a screening interview. Ask thoughtful questions about the candidate's experience and technical skills. Be conversational and encouraging.",
-  topics: ["past experience", "technical skills", "motivation", "culture fit"],
-  tone: "friendly",
-  followUpStyle: "balanced",
-  questionStyle: "hybrid",
-  maxQuestions: 5,
-  maxFollowUpsPerQuestion: 2,
-  attachContextFromInterview: true,
-};
-
-const DEFAULT_CONTEXT: InterviewContext = {
-  company: "Acme Corp",
-  role: "Senior Software Engineer",
-  seniority: "Senior",
-  jdHighlights: [
-    "5+ years backend development",
-    "Strong API design skills",
-    "Experience with microservices",
-  ],
-  extraContext: "Fast-paced startup environment",
-};
-
-const DEFAULT_OBJECTIVES: TavusObjectivesPayload = {
-  data: [
-    {
-      objective_name: "assess_technical_skills",
-      objective_prompt:
-        "Evaluate the candidate's technical expertise and problem-solving ability through targeted questions about their past projects and technical knowledge.",
-      confirmation_mode: "auto",
-    },
-    {
-      objective_name: "evaluate_culture_fit",
-      objective_prompt:
-        "Assess whether the candidate aligns with the company values and team dynamics.",
-      confirmation_mode: "auto",
-    },
-  ],
-};
+interface ExtractedJobData {
+  company: string;
+  role: string;
+  summary: string;
+  questions: string[];
+}
 
 export default function HomePage() {
   // Register web component
   useTavusWebComponent();
 
-  // Persona, context, and objectives editors
-  const [personaJson, setPersonaJson] = useState(
-    JSON.stringify(DEFAULT_PERSONA, null, 2)
-  );
-  const [contextJson, setContextJson] = useState(
-    JSON.stringify(DEFAULT_CONTEXT, null, 2)
-  );
-  const [objectivesJson, setObjectivesJson] = useState(
-    JSON.stringify(DEFAULT_OBJECTIVES, null, 2)
-  );
+  // Job extraction state
+  const [jobUrl, setJobUrl] = useState("https://www.metacareers.com/jobs/1471056164046415");
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [jobData, setJobData] = useState<ExtractedJobData | null>(null);
 
-  // Parsed values
-  const [persona, setPersona] = useState<PersonaInput>(DEFAULT_PERSONA);
-  const [context, setContext] = useState<InterviewContext>(DEFAULT_CONTEXT);
-  const [objectives, setObjectives] = useState<TavusObjectivesPayload>(DEFAULT_OBJECTIVES);
+  // Interview state
+  const [isInterviewRunning, setIsInterviewRunning] = useState(false);
+  const [interviewStarted, setInterviewStarted] = useState(false);
+  const [interviewEnded, setInterviewEnded] = useState(false);
+  const [finalSummary, setFinalSummary] = useState<any>(null);
 
-  // Validation errors
-  const [personaError, setPersonaError] = useState<string | null>(null);
-  const [contextError, setContextError] = useState<string | null>(null);
-  const [objectivesError, setObjectivesError] = useState<string | null>(null);
+  // Extract job data from URL
+  const handleExtractJob = async () => {
+    if (!jobUrl.trim()) {
+      setExtractError("Please enter a job URL");
+      return;
+    }
 
-  // Autoplay toggle
-  const [autoplay, setAutoplay] = useState(false);
+    setExtracting(true);
+    setExtractError(null);
+    setJobData(null);
 
-  // Events from TavusInterview
-  const [events, setEvents] = useState<UIMessage[]>([]);
-
-  // Check env vars on client only (prevents hydration mismatch)
-  const [hasPersonaId, setHasPersonaId] = useState(false);
-  const [apiKeySet, setApiKeySet] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    setHasPersonaId(!!process.env.NEXT_PUBLIC_TAVUS_PERSONA_ID);
-    setApiKeySet(!!process.env.NEXT_PUBLIC_TAVUS_API_KEY);
-  }, []);
-
-  // Parse persona JSON
-  const handlePersonaChange = (value: string) => {
-    setPersonaJson(value);
     try {
-      const parsed = JSON.parse(value);
-      setPersona(parsed);
-      setPersonaError(null);
+      const response = await fetch("/api/extract-job", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobUrl }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to extract job data");
+      }
+
+      const data: ExtractedJobData = await response.json();
+      setJobData(data);
+      console.log("[HomePage] Job data extracted:", data);
     } catch (err) {
-      setPersonaError(err instanceof Error ? err.message : "Invalid JSON");
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setExtractError(message);
+      console.error("[HomePage] Extract error:", err);
+    } finally {
+      setExtracting(false);
     }
   };
 
-  // Parse context JSON
-  const handleContextChange = (value: string) => {
-    setContextJson(value);
-    try {
-      const parsed = JSON.parse(value);
-      setContext(parsed);
-      setContextError(null);
-    } catch (err) {
-      setContextError(err instanceof Error ? err.message : "Invalid JSON");
-    }
+  // Build persona and context from extracted data
+  const persona: PersonaInput | null = jobData
+    ? {
+        name: `${jobData.company} Recruiter`,
+        systemPrompt: `You are a friendly recruiter at ${jobData.company} conducting an interview for the ${jobData.role} position. Ask thoughtful questions about the candidate's experience and skills relevant to this role. Be conversational and encouraging. Here are some key questions to cover: ${jobData.questions.join("; ")}`,
+        topics: ["experience", "technical skills", "motivation", "culture fit"],
+        tone: "friendly",
+        followUpStyle: "balanced",
+        questionStyle: "hybrid",
+        maxQuestions: 5,
+        maxFollowUpsPerQuestion: 2,
+        attachContextFromInterview: true,
+      }
+    : null;
+
+  const context: InterviewContext | null = jobData
+    ? {
+        company: jobData.company,
+        role: jobData.role,
+        seniority: "Mid-Senior",
+        jdHighlights: [jobData.summary],
+        extraContext: `Interview questions focus: ${jobData.questions.join(", ")}`,
+      }
+    : null;
+
+  const objectives: TavusObjectivesPayload = {
+    data: [
+      {
+        objective_name: "assess_technical_fit",
+        objective_prompt:
+          "Evaluate the candidate's technical expertise and how it aligns with the role requirements.",
+        confirmation_mode: "auto",
+      },
+      {
+        objective_name: "evaluate_motivation",
+        objective_prompt:
+          "Assess the candidate's motivation for the role and alignment with company values.",
+        confirmation_mode: "auto",
+      },
+    ],
   };
 
-  // Parse objectives JSON
-  const handleObjectivesChange = (value: string) => {
-    setObjectivesJson(value);
-    try {
-      const parsed = JSON.parse(value);
-      setObjectives(parsed);
-      setObjectivesError(null);
-    } catch (err) {
-      setObjectivesError(err instanceof Error ? err.message : "Invalid JSON");
-    }
-  };
-
-  // Handle events from TavusInterview
+  // Handle interview events
   const handleEvent = (message: UIMessage) => {
-    setEvents((prev) => [...prev, message]);
+    console.log("[HomePage] Interview event:", message.type);
+
+    if (message.type === "connected") {
+      setIsInterviewRunning(true);
+    } else if (message.type === "disconnected") {
+      // Mark interview as stopped but don't auto-redirect
+      setIsInterviewRunning(false);
+    } else if (message.type === "error") {
+      setIsInterviewRunning(false);
+    }
+  };
+
+  // Manually end interview and go to finalization
+  const handleEndInterview = () => {
+    setIsInterviewRunning(false);
+    setInterviewEnded(true);
+  };
+
+  // Handle analytics summary
+  const handleAnalyticsSummary = (summary: any) => {
+    setFinalSummary(summary);
+  };
+
+  // Start interview
+  const handleStartInterview = () => {
+    setInterviewStarted(true);
   };
 
   return (
-    <div className="page-container">
-      <header className="page-header">
-        <h1>Tavus Interview Demo</h1>
-        <div className="header-badges">
-          {mounted && !apiKeySet && (
-            <span className="badge badge-error">
-              ⚠️ NEXT_PUBLIC_TAVUS_API_KEY not set
-            </span>
-          )}
-          {mounted && hasPersonaId && (
-            <span className="badge badge-info">
-              🔄 Reusing persona: {process.env.NEXT_PUBLIC_TAVUS_PERSONA_ID}
-            </span>
-          )}
-          {mounted && apiKeySet && !hasPersonaId && (
-            <span className="badge badge-success">
-              ✓ API key set
-            </span>
-          )}
-        </div>
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      background: '#f9fafb',
+    }}>
+      <header style={{
+        background: 'white',
+        borderBottom: '1px solid #e5e7eb',
+        padding: '16px 24px',
+      }}>
+        <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 600 }}>
+          AI Interview Practice
+        </h1>
       </header>
 
-      <div className="main-layout">
-        <aside className="config-panel">
-          <section className="editor-section">
-            <h2>Persona Input</h2>
-            {personaError && <div className="error-message">{personaError}</div>}
-            <textarea
-              className="json-editor"
-              value={personaJson}
-              onChange={(e) => handlePersonaChange(e.target.value)}
-              spellCheck={false}
-            />
-          </section>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+        {interviewEnded ? (
+          // Finalization Screen
+          <div style={{
+            maxWidth: '800px',
+            margin: '80px auto',
+            padding: '0 24px',
+            width: '100%',
+          }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '12px',
+              padding: '40px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            }}>
+              <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+                <h2 style={{
+                  margin: '0 0 8px 0',
+                  fontSize: '28px',
+                  fontWeight: 600,
+                  color: '#10b981',
+                }}>
+                  Interview Complete!
+                </h2>
+                <p style={{
+                  margin: 0,
+                  color: '#6b7280',
+                  fontSize: '15px',
+                }}>
+                  Here's how you performed
+                </p>
+              </div>
 
-          <section className="editor-section">
-            <h2>Interview Context</h2>
-            {contextError && <div className="error-message">{contextError}</div>}
-            <textarea
-              className="json-editor"
-              value={contextJson}
-              onChange={(e) => handleContextChange(e.target.value)}
-              spellCheck={false}
-            />
-          </section>
+              {finalSummary && (
+                <>
+                  {/* Session Info */}
+                  <div style={{
+                    padding: '16px',
+                    background: '#f9fafb',
+                    borderRadius: '8px',
+                    marginBottom: '24px',
+                  }}>
+                    <h3 style={{
+                      margin: '0 0 12px 0',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      color: '#374151',
+                    }}>
+                      Session Details
+                    </h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>
+                          Company
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>
+                          {jobData?.company || 'N/A'}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>
+                          Role
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>
+                          {jobData?.role || 'N/A'}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>
+                          Duration
+                        </div>
+                        <div style={{ fontSize: '14px', fontWeight: 600, color: '#111827' }}>
+                          {finalSummary.session?.durationSeconds || 0}s
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
-          <section className="editor-section">
-            <h2>Objectives</h2>
-            {objectivesError && <div className="error-message">{objectivesError}</div>}
-            <textarea
-              className="json-editor"
-              value={objectivesJson}
-              onChange={(e) => handleObjectivesChange(e.target.value)}
-              spellCheck={false}
-            />
-          </section>
+                  {/* Performance Metrics */}
+                  <div style={{ marginBottom: '24px' }}>
+                    <h3 style={{
+                      margin: '0 0 16px 0',
+                      fontSize: '16px',
+                      fontWeight: 600,
+                      color: '#111827',
+                    }}>
+                      Performance Overview
+                    </h3>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(3, 1fr)',
+                      gap: '16px',
+                    }}>
+                      <div style={{
+                        padding: '20px',
+                        background: '#f0f9ff',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: '8px',
+                        textAlign: 'center',
+                      }}>
+                        <div style={{ fontSize: '12px', color: '#1e40af', marginBottom: '8px', fontWeight: 500 }}>
+                          Speech Rate
+                        </div>
+                        <div style={{ fontSize: '32px', fontWeight: 700, color: '#1e3a8a', marginBottom: '4px' }}>
+                          {finalSummary.speech.wpm?.mean ? Math.round(finalSummary.speech.wpm.mean) : '—'}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#60a5fa' }}>
+                          words/min
+                        </div>
+                      </div>
 
-          <section className="controls-section">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={autoplay}
-                onChange={(e) => setAutoplay(e.target.checked)}
-              />
-              Autoplay on mount
-            </label>
-          </section>
-        </aside>
+                      <div style={{
+                        padding: '20px',
+                        background: '#fef3c7',
+                        border: '1px solid #fde68a',
+                        borderRadius: '8px',
+                        textAlign: 'center',
+                      }}>
+                        <div style={{ fontSize: '12px', color: '#92400e', marginBottom: '8px', fontWeight: 500 }}>
+                          Filler Words
+                        </div>
+                        <div style={{ fontSize: '32px', fontWeight: 700, color: '#78350f', marginBottom: '4px' }}>
+                          {finalSummary.speech.fillers_per_min?.mean ? Math.round(finalSummary.speech.fillers_per_min.mean) : '—'}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#d97706' }}>
+                          per minute
+                        </div>
+                      </div>
 
-        <main className="interview-panel">
-          <h2>Interview</h2>
-          {!personaError && !contextError && !objectivesError ? (
-            <TavusInterview
-              persona={persona}
-              context={context}
-              objectives={objectives}
-              autoplay={autoplay}
-              onEvent={handleEvent}
-            />
-          ) : (
-            <div className="validation-error">
-              <p>Fix JSON errors before starting interview</p>
+                      <div style={{
+                        padding: '20px',
+                        background: '#f0fdf4',
+                        border: '1px solid #bbf7d0',
+                        borderRadius: '8px',
+                        textAlign: 'center',
+                      }}>
+                        <div style={{ fontSize: '12px', color: '#166534', marginBottom: '8px', fontWeight: 500 }}>
+                          Gaze Stability
+                        </div>
+                        <div style={{ fontSize: '32px', fontWeight: 700, color: '#14532d', marginBottom: '4px' }}>
+                          {finalSummary.face.gaze_stability?.mean ? Math.round(finalSummary.face.gaze_stability.mean) : '—'}
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#22c55e' }}>
+                          lower is better
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Transcript Summary */}
+                  {finalSummary.transcript?.word_count > 0 && (
+                    <div style={{
+                      padding: '16px',
+                      background: '#f9fafb',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      marginBottom: '24px',
+                    }}>
+                      <h4 style={{
+                        margin: '0 0 8px 0',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        color: '#374151',
+                      }}>
+                        Your Response
+                      </h4>
+                      <p style={{
+                        margin: 0,
+                        fontSize: '13px',
+                        color: '#6b7280',
+                        lineHeight: '1.6',
+                      }}>
+                        Total words spoken: {finalSummary.transcript.word_count}
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Action Buttons */}
+              <div style={{
+                display: 'flex',
+                gap: '12px',
+                marginTop: '32px',
+              }}>
+                <button
+                  onClick={() => {
+                    setInterviewEnded(false);
+                    setInterviewStarted(false);
+                    setJobData(null);
+                    setJobUrl("");
+                    setFinalSummary(null);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    background: '#2563eb',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Try Another Interview
+                </button>
+              </div>
             </div>
-          )}
-        </main>
-      </div>
+          </div>
+        ) : !interviewStarted ? (
+          // Job URL Input Screen
+          <div style={{
+            maxWidth: '600px',
+            margin: '80px auto',
+            padding: '0 24px',
+            width: '100%',
+          }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '12px',
+              padding: '32px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            }}>
+              <h2 style={{
+                margin: '0 0 8px 0',
+                fontSize: '24px',
+                fontWeight: 600,
+              }}>
+                Enter Job URL
+              </h2>
+              <p style={{
+                margin: '0 0 24px 0',
+                color: '#6b7280',
+                fontSize: '14px',
+              }}>
+                Paste a job posting URL to generate a personalized interview
+              </p>
 
-      <footer className="metrics-container">
-        <MetricsPanel events={events} />
-      </footer>
+              <div style={{ marginBottom: '16px' }}>
+                <input
+                  type="text"
+                  value={jobUrl}
+                  onChange={(e) => setJobUrl(e.target.value)}
+                  placeholder="https://www.metacareers.com/jobs/..."
+                  disabled={extracting || !!jobData}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontFamily: 'monospace',
+                  }}
+                />
+              </div>
+
+              {extractError && (
+                <div style={{
+                  padding: '12px',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: '8px',
+                  color: '#991b1b',
+                  fontSize: '13px',
+                  marginBottom: '16px',
+                }}>
+                  {extractError}
+                </div>
+              )}
+
+              {!jobData ? (
+                <button
+                  onClick={handleExtractJob}
+                  disabled={extracting}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    background: extracting ? '#9ca3af' : '#2563eb',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: extracting ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {extracting ? "Analyzing Job Posting..." : "Analyze Job"}
+                </button>
+              ) : (
+                <>
+                  <div style={{
+                    padding: '16px',
+                    background: '#f0fdf4',
+                    border: '1px solid #bbf7d0',
+                    borderRadius: '8px',
+                    marginBottom: '16px',
+                  }}>
+                    <h3 style={{
+                      margin: '0 0 8px 0',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      color: '#166534',
+                    }}>
+                      Job Extracted
+                    </h3>
+                    <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#166534' }}>
+                      <strong>Company:</strong> {jobData.company}
+                    </p>
+                    <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#166534' }}>
+                      <strong>Role:</strong> {jobData.role}
+                    </p>
+                    <p style={{ margin: '0', fontSize: '13px', color: '#166534' }}>
+                      <strong>Questions:</strong> {jobData.questions.length} generated
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={handleStartInterview}
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      background: '#10b981',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Start Interview
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setJobData(null);
+                      setJobUrl("");
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '8px',
+                      background: 'transparent',
+                      color: '#6b7280',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '13px',
+                      cursor: 'pointer',
+                      marginTop: '8px',
+                    }}
+                  >
+                    Try Different Job
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
+          // Interview Screen - side-by-side layout
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+            {/* Interview iframe - takes up main space */}
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              padding: '16px',
+              minWidth: 0,
+            }}>
+              {persona && context && (
+                <div style={{
+                  width: '100%',
+                  background: 'white',
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                  boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}>
+                  <TavusInterview
+                    persona={persona}
+                    context={context}
+                    objectives={objectives}
+                    autoplay={true}
+                    onEvent={handleEvent}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Analytics Panel - sidebar */}
+            <div style={{
+              width: '400px',
+              borderLeft: '1px solid #e5e7eb',
+              background: 'white',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'auto',
+            }}>
+              <AnalyticsPanel
+                isInterviewRunning={isInterviewRunning}
+                onSummary={handleAnalyticsSummary}
+                onFinalize={handleEndInterview}
+              />
+            </div>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

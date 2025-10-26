@@ -149,17 +149,21 @@ export function TavusInterview({
   // Fire "connected" when iframe loads
   const handleIframeLoad = () => {
     console.log("[TavusInterview] Iframe loaded");
+    setHasConnected(true);
     emitEvent("connected", "Iframe loaded and ready");
   };
 
-  // Fire "disconnected" on unmount
+  // Track if iframe actually connected to avoid false disconnects
+  const [hasConnected, setHasConnected] = useState(false);
+
+  // Fire "disconnected" on unmount only if we actually connected
   useEffect(() => {
     return () => {
-      if (session) {
+      if (session && hasConnected) {
         emitEvent("disconnected", "Component unmounted");
       }
     };
-  }, [session]);
+  }, [session, hasConnected]);
 
   // Render states
   if (error) {

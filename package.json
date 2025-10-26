@@ -9,14 +9,23 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@tavily/core": "^0.5.12",
+    "@tensorflow-models/face-landmarks-detection": "^1.0.2",
+    "@tensorflow/tfjs": "^4.15.0",
+    "@xenova/transformers": "^2.17.2",
     "next": "14.2.18",
+    "openai": "^4.77.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "autoprefixer": "^10.4.17",
+    "postcss": "^8.4.33",
+    "tailwindcss": "^3.4.1",
     "typescript": "^5"
   }
 }
